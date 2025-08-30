@@ -1,0 +1,159 @@
+import java.io.*;
+import java.net.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class Server {
+    private ServerSocket serverSocket;
+    private static ConcurrentHashMap<String, ClientInfo> map = new ConcurrentHashMap<>();
+    private static ConcurrentHashMap<String, PrintWriter> clientWriters = new ConcurrentHashMap<>();  // Store client writers for broadcasting
+
+
+    public Server(int port) throws IOException {
+        serverSocket = new ServerSocket(port);
+
+        System.out.println("Server started on port " + port);
+    }
+
+    public void start() {
+        while (true) {
+            try {
+                Socket clientSocket = serverSocket.accept(); // Accept a new client connection
+                // Start a new thread for each client using the ClientHandler class
+                new Thread(new ClientHandler(clientSocket)).start();
+            } catch (IOException e) {
+                System.out.println("Error accepting client connection: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
+
+    static class ClientInfo {
+        private String ipAddress;
+        private int port;
+        private String clientID;
+        private String fileName;
+        private int fileSize;
+        private List<Integer> availablePieces;
+        private int pieceSize;
+
+        public ClientInfo(String ipAddress, int port, String clientID, String fileName,int fileSize, List<Integer> availablePieces,int pieceSize) {
+            this.ipAddress = ipAddress;
+            this.port = port;
+            this.clientID = clientID;
+            this.fileName = fileName;
+            this.fileSize = fileSize;
+            this.availablePieces = availablePieces;
+            this.pieceSize = pieceSize;
+        }
+
+        public String getIpAddress() {
+            return ipAddress;
+        }
+        public int getPort() {
+            return port;
+        }
+        public int getfileSize() {
+            return fileSize;
+        }
+        public String getClientID() {
+            return clientID;
+        }
+        public String getClientfileName() {
+            return fileName;
+        }
+        public List<Integer> getavailablePieces() {
+            return availablePieces;
+        }
+        public String getallPart(){
+            String re = "";
+            for (int i = 0; i < availablePieces.size(); i++) {
+                re += Integer.toString(availablePieces.get(i));
+                if (i < availablePieces.size() - 1) {
+                    re += " "; 
+                }
+            }
+            return re;
+        }
+        public int getpieceSize() {
+            return pieceSize;
+        }
+    }
+   
+    
+    private static class ClientHandler implements Runnable {
+        private Socket clientSocket;
+
+        public ClientHandler(Socket socket) {
+            this.clientSocket = socket;
+        }
+
+        private static void sendAllClientsInfo() {
+            for (PrintWriter writer : clientWriters.values()) {
+                String response ="";
+                writer.println(map.size());
+                for (ClientInfo clientInfo : map.values()) {
+                    response = clientInfo.getClientID() + ". "+ clientInfo.getIpAddress() + ". " + clientInfo.getPort() ;
+                    writer.println(response);
+                    response = clientInfo.getClientfileName()+"."+ clientInfo.getfileSize() +"."+ clientInfo.getallPart()+ "." + clientInfo.getpieceSize();
+                    writer.println(response);
+                }
+            }
+        }
+
+        @Override
+        public void run() {
+            try (PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
+                BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) {
+
+                String request;
+                while ((request = in.readLine()) != null) {
+                    String[] parts = request.split("\\."); 
+                    if ("REQUEST JOIN".equals(parts[0])) {
+                        //Initialize peer
+                        List<Integer> availablePiecesTemp = new ArrayList<>();
+
+                        // Split the string based on spaces
+                        String str = parts[4];
+                        System.out.println(str);
+                        str = str.substring(1, str.length() - 1);
+                        String[] piecesArray = str.split(", ");
+    
+                        // Parse each string into an integer and add it to the list
+                        for (String piece : piecesArray) {
+                            availablePiecesTemp.add(Integer.parseInt(piece));
+                        }
+                        ClientInfo CI = new ClientInfo(clientSocket.getInetAddress().getHostAddress(), Integer.parseInt(parts[6], parts[1],parts[2],Integer.parseInt(parts[3]),availablePiecesTemp,Integer.parseInt(parts[5]));
+    
+                        map.put(parts[1], CI);
+                        clientWriters.put(parts[1],out);
+                    }
+
+                    if ("REQUEST PEERS".equals(parts[0])) {
+                        // Simulate sending a list of peers
+                        sendAllClientsInfo();
+                    }
+                }
+            } catch (IOException e) {
+                System.out.println("Error handling client: " + e.getMessage());
+                e.printStackTrace();
+            } finally {
+                try {
+                    clientSocket.close(); // Ensure the socket is closed on finishing handling
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+    public static void main(String[] args) throws IOException {
+        try {
+            Server server = new Server(5000);
+            server.start();
+        } catch (IOException e) {
+            System.out.println("Could not start server: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }    
+}

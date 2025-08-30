@@ -1,0 +1,120 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Compile Java",
+            "type": "shell",
+            "command": "javac",
+            "args": [
+                "Server.java",
+                "Client.java",
+                "Testing/FileSplit.java"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Run Server",
+            "type": "shell",
+            "command": "java",
+            "args": [
+                "Server"
+            ],
+            "dependsOn": [
+                "Compile Java"
+            ],
+            "group": "test"
+        },
+        {
+            "label": "Run FileSplit",
+            "type": "shell",
+            "command": "java",
+            "args": [
+                "-cp",
+                "${workspaceFolder}",
+                "Testing.FileSplit",
+                "${workspaceFolder}/Testing/2.txt"
+            ],
+            "dependsOn": [
+                "Compile Java"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "Run Client 1",
+            "type": "shell",
+            "command": "java",
+            "args": [
+                "-cp",
+                "${workspaceFolder}",
+                "Client",
+                "${workspaceFolder}/Client1/Meta.txt"
+            ],
+            "dependsOn": [
+                "Compile Java"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "Run Client 2",
+            "type": "shell",
+            "command": "java",
+            "args": [
+                "-cp",
+                "${workspaceFolder}",
+                "Client",
+                "${workspaceFolder}/Client2/Meta.txt"
+            ],
+            "dependsOn": [
+                "Compile Java"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "Run Client 3",
+            "type": "shell",
+            "command": "java",
+            "args": [
+                "-cp",
+                "${workspaceFolder}",
+                "Client",
+                "${workspaceFolder}/Client3/Meta.txt"
+            ],
+            "dependsOn": [
+                "Compile Java"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "type": "java (build)",
+            "paths": [
+                "${workspace}"
+            ],
+            "isFullBuild": true,
+            "group": "build",
+            "problemMatcher": [],
+            "label": "java (build): Build Workspace",
+            "detail": "$(tools) Build all the Java projects in workspace."
+        }
+    ]
+}

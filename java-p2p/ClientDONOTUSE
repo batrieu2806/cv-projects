@@ -1,0 +1,453 @@
+import java.io.*;
+import java.net.*;
+import java.nio.file.Files;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.io.File;
+
+public class Client {
+    private String trackerURL;
+    private String ClientID;
+    private int trackerPort;
+    private int Port;
+    private static String fileName;
+    private static int fileSize;
+    private static List<Integer> availablePieces;
+    private int pieceSize;
+    private static String fileDirectory;
+
+    private Socket socket;
+    private BufferedReader input;
+    private PrintWriter output;
+
+     // HashMap to store peer information
+    private static Set<Integer> neededPieces = new HashSet<>();
+    private static ConcurrentHashMap<Integer, String> MissingPiece = new ConcurrentHashMap<>();
+    private static ConcurrentHashMap<String, PeerInfo> peersMap = new ConcurrentHashMap<>();
+    private String[] connectedClients;
+
+    public String getClientID(){
+        return ClientID;
+    }
+    public void addConnectedClient(String clientID) {
+        // Check if the clientID is already in the array
+        if (!Arrays.asList(connectedClients).contains(clientID)) {
+            // Find an empty slot and add the clientID
+            for (int i = 0; i < connectedClients.length; i++) {
+                if (connectedClients[i] == null) {
+                    connectedClients[i] = clientID;
+                    break;
+                }
+            }
+        }
+    }
+    public boolean isClientConnected(String clientID) {
+        for (String connectedClient : connectedClients) {
+            if (clientID.equals(connectedClient)) {
+                return true; // Client found in the array
+            }
+        }
+        return false; // Client not found in the array
+    }
+
+    public class PeerInfo {
+        private String ipAddress;
+        private int port;
+        private String clientID;
+        private String fileName;
+        private int fileSize;
+        private List<Integer> availablePieces;
+        private int pieceSize;
+    
+        public PeerInfo(String ipAddress, int port, String clientID, String fileName, int fileSize, List<Integer> availablePieces, int pieceSize) {
+            this.ipAddress = ipAddress;
+            this.port = port;
+            this.clientID = clientID;
+            this.fileName = fileName;
+            this.fileSize = fileSize;
+            this.availablePieces = availablePieces;
+            this.pieceSize = pieceSize;
+        }
+    
+        public String getIpAddress() {
+            return ipAddress;
+        }
+    
+        public int getPort() {
+            return port;
+        }
+    
+        public String getClientID() {
+            return clientID;
+        }
+    
+        public String getFileName() {
+            return fileName;
+        }
+    
+        public int getFileSize() {
+            return fileSize;
+        }
+    
+        public List<Integer> getAvailablePieces() {
+            return availablePieces;
+        }
+    
+        public int getPieceSize() {
+            return pieceSize;
+        }
+        public String getFileDetails() {
+            String Output = "";
+            Output += fileName + ".txt," + fileSize + "kb,Piece=[";
+
+            for (int i = 0; i < availablePieces.size(); i++) {
+                Output += availablePieces.get(i);
+                if (i < availablePieces.size() - 1) { // Check if this is not the last element
+                    Output += ", ";
+                }
+            }
+            Output +="]," + pieceSize + "kb";
+            return Output;
+        }
+    
+        // Returns a formatted string with client connection details
+        public String getConnectionInfo() {
+            return clientID + " IP:" + ipAddress + " PORT:" + port;
+        }
+    }
+
+
+    public Client(String metainfoPath) throws IOException {
+        try (BufferedReader reader = new BufferedReader(new FileReader(metainfoPath))) 
+        {   
+            Random random = new Random();
+            this.connectedClients = new String[99];
+            this.trackerURL = reader.readLine().trim(); // First line: tracker URL
+            this.trackerPort = Integer.parseInt(reader.readLine().trim()); // Second line: tracker Port
+            this.ClientID = reader.readLine().trim();
+
+            this.addConnectedClient(ClientID);
+            this.Port = random.nextInt((65535 - 49152) + 1) + 49152;
+            Client.fileName = reader.readLine().trim();
+            Client.fileSize = Integer.parseInt(reader.readLine().trim().split(" ")[0]);
+            Client.availablePieces = new ArrayList<>();
+            for (String index : reader.readLine().trim().split(" ")) { // Sixth line: Piece indexes
+                availablePieces.add(Integer.parseInt(index));
+            }
+            this.pieceSize = Integer.parseInt(reader.readLine().trim().split(" ")[0]);
+            File file = new File(metainfoPath);
+            String parentDirectory = file.getParent();
+            Client.fileDirectory = parentDirectory;
+        }
+        this.socket = new Socket(trackerURL, trackerPort);
+        this.input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        this.output = new PrintWriter(socket.getOutputStream(), true);
+    }
+
+    private void initializeNeededPieces() {
+        for (int i = 0; i < fileSize; i++) {
+            neededPieces.add(i);
+        }
+        neededPieces.removeAll(availablePieces);
+    }
+
+
+    private void join(){
+        output.println("REQUEST JOIN." + ClientID + "." + fileName+ "." + fileSize + "." + availablePieces + "." + pieceSize + "." + Port);
+    }
+
+    private void requestAndParsePeers() throws IOException {
+        // Send request
+        output.println("REQUEST PEERS.");
+        // Read response
+        parsePeers();
+    }
+    private void printCurrentPeerinfo() {
+        System.out.println("__CURRENT CONNECTED CLIENT__");
+        for (Map.Entry<String, PeerInfo> entry : peersMap.entrySet()) {
+            PeerInfo peer = entry.getValue();
+            // Assuming that getConnectionInfo and getFileDetails are methods that return formatted Strings of peer details
+            String connectionInfo = peer.getConnectionInfo();
+            String fileInfo = peer.getFileDetails();
+    
+            System.out.println("Connection Info: " + connectionInfo);
+            System.out.println("File Info: " + fileInfo);
+            // If detailed information about available pieces or other specifics are needed, they can also be printed here
+        }
+    }
+    public static void printMissingPieces() {
+        if (MissingPiece.isEmpty()) {
+            System.out.println("No missing pieces currently tracked.");
+        } else {
+            System.out.println("Missing Pieces:");
+            for (Map.Entry<Integer, String> entry : MissingPiece.entrySet()) {
+                Integer pieceIndex = entry.getKey();
+                String clientId = entry.getValue();
+                System.out.println("Piece Index: " + pieceIndex + " is available from Client ID: " + clientId);
+            }
+        }
+    }
+
+    private void parsePeers() throws IOException {
+        int count = Integer.parseInt(input.readLine());
+        for (int i = 0; i < count; i++) {
+            String response = input.readLine();
+            String response2 = input.readLine();
+
+            String[] details = response.split("\\. ");
+            String ipAddress = details[1];
+            int port =  Integer.parseInt(details[2]);
+            String clientID = details[0];
+    
+            details = response2.split("\\.");
+            String fileName = details[0];
+            int fileSize = Integer.parseInt(details[1]);
+
+            String[] piecesArray = details[2].split(" ");
+            List<Integer> availablePiecesTemp = new ArrayList<>();
+            // Parse each string into an integer and add it to the list
+            for (String piece : piecesArray) {
+                availablePiecesTemp.add(Integer.parseInt(piece));
+            }
+            
+            int pieceSize = Integer.parseInt(details[3]);
+            PeerInfo newPeerInfo = new PeerInfo(ipAddress, port, clientID, fileName, fileSize, availablePiecesTemp, pieceSize);
+            peersMap.put(clientID, newPeerInfo);
+
+            for (Integer pieceIndex : availablePiecesTemp) {
+                if (neededPieces.contains(pieceIndex)) {
+                    MissingPiece.putIfAbsent(pieceIndex, clientID);  // Only add if missing
+                }
+            }
+            printMissingPieces();
+            if (!isClientConnected(clientID)){
+                addConnectedClient(clientID);
+                connectToPeer(port);
+            }
+        }
+        printCurrentPeerinfo();
+    }
+
+    public void close() throws IOException {
+        input.close();
+        output.close();
+        socket.close();
+    }
+    public static class PeerServer implements Runnable {
+        private int listenPort;
+    
+        public PeerServer(int port) {
+            this.listenPort = port;
+        }
+    
+        @Override
+        public void run() {
+            try (ServerSocket serverSocket = new ServerSocket(listenPort)) {
+                System.out.println("Peer Server listening on port " + listenPort);
+                while (!Thread.currentThread().isInterrupted()) {
+                    Socket clientSocket = serverSocket.accept(); // Accept incoming connections
+                    new Thread(new PeerConnectionHandler(clientSocket)).start(); // Handle each connection in a new thread
+                }
+            } catch (IOException e) {
+                System.err.println("Could not listen on port " + listenPort);
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void requestPiece(int pieceIndex, String peerIP, int peerPort) throws IOException {
+        try (Socket socket = new Socket(peerIP, peerPort);
+            
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+            BufferedInputStream in = new BufferedInputStream(socket.getInputStream())) {
+            out.println("REQUEST " + pieceIndex); // Send request
+    
+            // Assuming the piece size is predefined or manageable in one go
+            byte[] pieceData = new byte[1024 * 1024]; // Adjust size as needed
+            int bytesRead = in.read(pieceData);
+            if (bytesRead > 0) {
+                savePiece(pieceIndex, pieceData, bytesRead);
+            } else {
+                System.out.println("Failed to download piece or piece not available");
+            }
+        }
+    }
+    private void savePiece(int pieceIndex, byte[] pieceData, int length) throws IOException {
+        File file = new File(Client.fileDirectory + "/" + Client.fileName + ".txt.part" + pieceIndex);
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            fos.write(pieceData, 0, length);
+        }
+        // Update tracking structures as needed
+        availablePieces.add(pieceIndex);
+        neededPieces.remove(pieceIndex);
+    }
+    public void downloadMissingPieces() {
+        MissingPiece.forEach((pieceIndex, clientId) -> {
+            PeerInfo peer = peersMap.get(clientId);
+            if (peer != null) {
+                try {
+                    requestPiece(pieceIndex, peer.getIpAddress(), peer.getPort());
+                } catch (IOException e) {
+                    System.out.println("Failed to download piece " + pieceIndex + " from client " + clientId + ": " + e.getMessage());
+                }
+            } else {
+                System.out.println("No available peer info for client ID: " + clientId);
+            }
+        });
+    }
+
+
+    public static class PeerConnectionHandler implements Runnable {
+        private Socket clientSocket;
+    
+        public PeerConnectionHandler(Socket clientSocket) {
+            this.clientSocket = clientSocket;
+        }
+    
+        @Override
+        public void run() {
+            try (BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+                PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
+
+                String message = in.readLine();
+                if (message.startsWith("REQUEST")) {
+                    String[] requestParts = message.split(" ");
+                    if (requestParts.length >= 2 && requestParts[0].equals("REQUEST")) {
+                        int pieceIndex = Integer.parseInt(requestParts[1]);
+                        sendRequestedPiece(clientSocket, pieceIndex);
+                    } else {
+                        out.println("Invalid request format.");
+                    }
+                } else {
+                    out.println("Hello, you connected to " + clientSocket.getLocalSocketAddress());
+                    // Additional protocol handling can be placed here
+                }
+            } catch (IOException e) {
+                System.out.println("Error handling a peer connection.");
+                e.printStackTrace();
+            }
+        }
+        private void sendRequestedPiece(Socket clientSocket, int pieceIndex) throws IOException {
+            System.out.println(Client.fileDirectory + "/" + Client.fileName + ".txt.part" + pieceIndex);
+            try (BufferedOutputStream out = new BufferedOutputStream(clientSocket.getOutputStream())) {
+                System.out.println(Client.fileDirectory + "/" + Client.fileName + ".txt.part" + pieceIndex);
+                File pieceFile = new File(Client.fileDirectory + "/" + Client.fileName + ".txt.part" + pieceIndex);
+                
+                if (pieceFile.exists()) {
+                    //System.out.println(Client.fileDirectory + "/" + Client.fileName + ".part" + pieceIndex);
+                    byte[] pieceData = Files.readAllBytes(pieceFile.toPath());
+                    out.write(pieceData);
+                    out.flush();
+                } else {
+                    out.write("Piece not available".getBytes());
+                    out.flush();
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to handle request for piece " + pieceIndex + ": " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+        
+    }
+    public void connectToPeer(int port) {
+        String ipAddress = "127.0.0.1"; // Assuming all peers are on the local machine, change this accordingly if needed
+        int attempts = 0;
+        boolean logged = false;
+        while(attempts < 3){
+            try (Socket socket = new Socket(ipAddress, port);
+                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+        
+                out.println("Hello from " + ClientID);  // Sending a greeting to the peer
+                String response = in.readLine();  // Receiving a response
+                System.out.println("Received from peer on port " + port + ": " + response);
+
+                //downloadFile(fileDirectory,socket);
+                return;
+            } catch (IOException e) {
+                attempts++;
+                System.out.println("Attempt " + attempts + " failed to connect to peer on port " + port);
+                logged = true;
+                try {
+                    Thread.sleep(1000);  // Wait for a second before retrying
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();  // Restore interrupted status
+                    return;
+                }
+            }
+        }
+        if (logged) {  // Log final failure after retries
+            System.out.println("Error connecting to peer on port " + port + " after " + attempts + " attempts.");
+        }
+        
+    }
+
+    public class CommandListener implements Runnable {
+        private  Client client;
+    
+        public CommandListener(Client client) {
+            this.client = client;
+        }
+    
+        @Override
+        public void run() {
+            BufferedReader consoleReader = new BufferedReader(new InputStreamReader(System.in));
+            String userInput;
+    
+            System.out.println("Type 'download' to start downloading missing pieces, or 'exit' to quit.");
+    
+            try {
+                while (!Thread.currentThread().isInterrupted()) {
+                    userInput = consoleReader.readLine();
+                    if ("download".equalsIgnoreCase(userInput)) {
+                        System.out.println("Starting to download missing pieces...");
+                        client.downloadMissingPieces();
+                    } else if ("exit".equalsIgnoreCase(userInput)) {
+                        System.out.println("Exiting program.");
+                        System.exit(0);
+                    } else {
+                        System.out.println("Unknown command. Type 'download' to start downloading or 'exit' to quit.");
+                    }
+                }
+            } catch (IOException e) {
+                System.err.println("An error occurred while trying to read user input: " + e.getMessage());
+            }
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        if (args.length != 1) {
+            System.out.println("Usage: java Client <metainfo file path>");
+            System.exit(1);
+        }
+        try {
+            Client client = new Client(args[0]);
+            client.join();
+            client.initializeNeededPieces();
+            client.requestAndParsePeers();
+            
+            Thread updateListenerThread = new Thread(() -> {
+                try {
+                    while (true) { // Keep looping indefinitely
+                        client.parsePeers(); // Call parsePeers() method
+                    }
+                } catch (IOException e) {
+                    System.err.println("Error in parsing peers: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            });
+            PeerInfo peerInfo = peersMap.get(client.getClientID());
+            Thread serverThread = new Thread(new PeerServer(peerInfo.getPort())); // Assuming there's a method to get the local port
+
+            CommandListener listener = client.new CommandListener(client);
+            Thread commandListenerThread = new Thread(listener);
+            commandListenerThread.start();
+            
+            serverThread.start();
+            updateListenerThread.start();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
